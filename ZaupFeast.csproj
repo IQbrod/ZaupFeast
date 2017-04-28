@@ -69,6 +69,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="CommandRunFeast.cs" />
+    <Compile Include="CommandSelffeast.cs" />
     <Compile Include="ZaupFeast.cs" />
     <Compile Include="ZaupFeastConfiguration.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

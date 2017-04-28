@@ -1,22 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Timers;
 using System.Xml.Serialization;
-
-using Rocket;
 using Rocket.API;
 using Rocket.API.Collections;
-using Rocket.Core.Logging;
+using Rocket.API.Serialisation;
 using Rocket.Core.Plugins;
-using Rocket.Unturned;
 using Rocket.Unturned.Chat;
 using Rocket.Unturned.Effects;
-using Rocket.Unturned.Player;
-using Rocket.Unturned.Plugins;
 using SDG.Unturned;
 using UnityEngine;
-
+using Logger = Rocket.Core.Logging.Logger;
 namespace ZaupFeast
 {
     internal class Feast : RocketPlugin<FeastConfiguration>
@@ -67,12 +61,14 @@ namespace ZaupFeast
             // Did we load the configuration file?  If not, just end.
             if (Configuration.Instance.Items == null || ! Configuration.Instance.Items.Any())
             {
-                Logger.Log("Failed to load the configuration file.  Turned off feast.  Restart to try again.");
+                Rocket.Core.Logging.Logger.Log("Failed to load the configuration file.  Turned off feast.  Restart to try again.");
                 return;
             }
-
-            if (LevelNodes.nodes == null)
-                LevelNodes.load();
+            Provider.onServerHosted += () =>
+             {
+                 if (LevelNodes.nodes == null)
+                     LevelNodes.load();
+             };
         }
 
         protected override void Unload()
@@ -132,8 +128,8 @@ namespace ZaupFeast
             
             if (Feast.Instance.Configuration.Instance.SkyDrop)
             {
-                // Trigger timer for effects
-                UnturnedEffect plane = UnturnedEffectManager.GetEffectsById(Feast.Instance.Configuration.Instance.PlaneEffectId);
+                EffectAsset plane = Assets.find(EAssetType.EFFECT, Feast.Instance.Configuration.Instance.PlaneEffectId) as EffectAsset;
+
                 if (plane == null)
                 {
                     Logger.Log("The skydrop plane bundle is not the server!  Cannot trigger the airdrop animation.  Just sending items.");
@@ -142,7 +138,7 @@ namespace ZaupFeast
                 else
                 {
                     Vector3 loc = new Vector3(Feast.Instance.nextLocation.Pos.x, Feast.Instance.nextLocation.Pos.y + 50, Feast.Instance.nextLocation.Pos.z + 500);
-                    plane.Trigger(loc);
+                    SDG.Unturned.EffectManager.instance.channel.send("tellEffectPoint", ESteamCall.CLIENTS, loc, 1024, ESteamPacket.UPDATE_UNRELIABLE_BUFFER, new object[] { Feast.Instance.Configuration.Instance.SkydropEffectId, loc });
                     Feast.Instance.effectNum = 1;
                     Feast.Instance.Timer.Start();
                 }
@@ -159,10 +155,10 @@ namespace ZaupFeast
 
         private void skyDrop(List<Vector3> pos)
         {
-            UnturnedEffect skyDrop = UnturnedEffectManager.GetEffectsById(Feast.Instance.Configuration.Instance.SkydropEffectId);
             foreach (Vector3 p in pos)
             {
-                skyDrop.Trigger(new Vector3(p.x, p.y + 45, p.z));
+                Vector3 position = new Vector3(p.x, p.y + 45, p.z);
+                SDG.Unturned.EffectManager.instance.channel.send("tellEffectPoint", ESteamCall.CLIENTS, position, 1024, ESteamPacket.UPDATE_UNRELIABLE_BUFFER, new object[] { Feast.Instance.Configuration.Instance.SkydropEffectId, position });
             }
         }
 
@@ -240,16 +236,21 @@ namespace ZaupFeast
 
         private void initializeNodes()
         {
+            /** BASIC LOCATIONS */
             nodesInitialised = true;
-            if (LevelNodes.nodes == null) Logger.LogError("Doh! LevelNodes.nodes is NULL");
+            if (LevelNodes.nodes == null && (DateTime.Now - startTime).TotalSeconds > 5) LevelNodes.load();         
             foreach (Node n in LevelNodes.nodes)
             {
                 if (n.type == ENodeType.LOCATION)
                 {
-                    Locs loc = new Locs(n.point, ((LocationNode)n).Name);
+                    Locs loc = new Locs(n.point, ((LocationNode)n).name);
                     this.locations.Add(loc);
                 }
             }
+
+            /** CUSTOM LOCATIONS */
+            /*Locs loc = new Locs(new Vector3(0,0,0), "myFeast");
+            this.locations.Add(loc);*/
 
             // Get all the locations used by the items and remove any invalid items.
             List<string> usedlocs = new List<string>();
@@ -315,6 +316,7 @@ namespace ZaupFeast
             }
             catch (Exception ex)
             {
+                Logger.LogError("Doh! LevelNodes.nodes is NULL");
                 Logger.LogException(ex, "Exception in FixedUpdate");
             }
         }
